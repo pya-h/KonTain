@@ -1,1 +1,5 @@
 KonTain
+rootfs/proc/*
+!rootfs/proc/.gitkeep
+rootfs/root/*
+!rootfs/root/.gitkeep

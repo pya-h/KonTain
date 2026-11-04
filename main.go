@@ -34,17 +34,28 @@ func Try(fn func() error, error_tag string) {
 	}
 }
 
+func TryWithSuccess(fn func() error, success_msg string, error_tag string) {
+	if err := fn(); err != nil {
+		fmt.Println(error_tag, err)
+		os.Exit(1)
+	}
+	fmt.Println("Done!", success_msg)
+}
+
 func run(args []string) {
 	fmt.Println("Parent PID: ", os.Getpid())
 	cmd := exec.Command("/proc/self/exe", append([]string{"child"}, args...)...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	// cmd.SysProcAttr = &syscall.SysProcAttr{
+	// 	Cloneflags: syscall.CLONE_NEWUTS | syscall.CLONE_NEWPID |
+	// 		syscall.CLONE_NEWUSER, // not creating usernamespace here leads to needing root to create new_uts
+	// 	UidMappings: []syscall.SysProcIDMap{{ContainerID: 0, HostID: os.Getuid(), Size: 1}}, // now container sees current user as the root user inside it.
+	// 	GidMappings: []syscall.SysProcIDMap{{ContainerID: 0, HostID: os.Getgid(), Size: 1}},
+	// }
 	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Cloneflags: syscall.CLONE_NEWUTS | syscall.CLONE_NEWPID |
-			syscall.CLONE_NEWUSER, // not creating usernamespace here leads to needing root to create new_uts
-		UidMappings: []syscall.SysProcIDMap{{ContainerID: 0, HostID: os.Getuid(), Size: 1}}, // now container sees current user as the root user inside it.
-		GidMappings: []syscall.SysProcIDMap{{ContainerID: 0, HostID: os.Getgid(), Size: 1}},
+		Cloneflags: syscall.CLONE_NEWUTS | syscall.CLONE_NEWPID,
 	}
 
 	// The reason where setting hostname needed a child process:
@@ -60,15 +71,15 @@ func child(args []string) {
 	SpecificTry(syscall.Chroot, "./rootfs", "Chroot into KonTain failed!")
 	SpecificTry(syscall.Chdir, "/", "Redirecting to KonTain root failed!")
 
-	// Try(func() error {
-	// 	return syscall.Mount("proc", "proc", "proc", 0, "")
-	// }, "Mounting proc failed!")
+	Try(func() error {
+		return syscall.Mount("proc", "proc", "proc", 0, "")
+	}, "Mounting proc failed!")
 
-	// defer func() {
-	// 	Try(func() error {
-	// 		return syscall.Unmount("proc", 0)
-	// 	}, "Unmounting proc failed!")
-	// }()
+	defer func() {
+		TryWithSuccess(func() error {
+			return syscall.Unmount("proc", 0)
+		}, "Unmounted proc successfully!", "proc Unmount failure!")
+	}()
 	cmd := exec.Command(args[0], args[1:]...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
