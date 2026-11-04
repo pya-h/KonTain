@@ -20,14 +20,14 @@ func main() {
 	fmt.Printf("#%d Finished\n", os.Getpid())
 }
 
-func callSafelyBasic[T any](fn func(arg T) error, arg T, error_tag string) {
+func SpecificTry[T any](fn func(arg T) error, arg T, error_tag string) {
 	if err := fn(arg); err != nil {
 		fmt.Println(error_tag, err)
 		os.Exit(1)
 	}
 }
 
-func callSafely(fn func() error, error_tag string) {
+func Try(fn func() error, error_tag string) {
 	if err := fn(); err != nil {
 		fmt.Println(error_tag, err)
 		os.Exit(1)
@@ -50,22 +50,22 @@ func run(args []string) {
 	// The reason where setting hostname needed a child process:
 	// Since the previous line doesnt actually run until cmd.Run() is executed, There is no new newuts created to set the hostname
 	// Also putting this line After Run wont work, because it wont reach to execute until the cmd.Run() is not exited (it some what pauses on it).
-	callSafely(cmd.Run, "Setting up KonTain failed!")
+	Try(cmd.Run, "Setting up KonTain failed!")
 }
 
 func child(args []string) {
 	fmt.Println("Child PID: ", os.Getpid())
 
-	callSafelyBasic(syscall.Sethostname, []byte("KonTain"), "Setting the hostname failed!")
-	callSafelyBasic(syscall.Chroot, "./rootfs", "Chroot into KonTain failed!")
-	callSafelyBasic(syscall.Chdir, "/", "Redirecting to KonTain root failed!")
+	SpecificTry(syscall.Sethostname, []byte("KonTain"), "Setting the hostname failed!")
+	SpecificTry(syscall.Chroot, "./rootfs", "Chroot into KonTain failed!")
+	SpecificTry(syscall.Chdir, "/", "Redirecting to KonTain root failed!")
 
-	// callSafely(func() error {
+	// Try(func() error {
 	// 	return syscall.Mount("proc", "proc", "proc", 0, "")
 	// }, "Mounting proc failed!")
 
 	// defer func() {
-	// 	callSafely(func() error {
+	// 	Try(func() error {
 	// 		return syscall.Unmount("proc", 0)
 	// 	}, "Unmounting proc failed!")
 	// }()
@@ -74,5 +74,5 @@ func child(args []string) {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	callSafely(cmd.Run, "Running KonTain failed!")
+	Try(cmd.Run, "Running KonTain failed!")
 }
