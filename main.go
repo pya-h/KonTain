@@ -43,6 +43,8 @@ func TryWithSuccess(fn func() error, success_msg string, error_tag string) {
 	fmt.Println("Done!", success_msg)
 }
 
+// The cgroup setup is only for `cgroup2fs` cgroups for now
+// TODO: Add support for both versions
 func limitProcesses(cgroup_name string, limit uint64) error {
 	cgroup_path := filepath.Join("/sys/fs/cgroup", cgroup_name)
 	if err := os.MkdirAll(cgroup_path, 0755); err != nil {
@@ -79,13 +81,16 @@ func run(args []string) {
 	Try(func() error {
 		return limitMemoryUsage(cgroup_name, 1.0)
 	}, "Failed setting memory limit!")
-	cgroup_dir, err := os.Open(filepath.Join("/sys/fs/cgroup", cgroup_name))
+	cgroup_path := filepath.Join("/sys/fs/cgroup", cgroup_name)
+	cgroup_dir, err := os.Open(cgroup_path)
 	if err != nil {
 		fmt.Println("Seems cgroup setup has not gone as expected: ", err)
 		os.Exit(1)
 	}
 	defer cgroup_dir.Close()
-
+	defer func() {
+		SpecificTry(os.Remove, cgroup_path, "Failed cleaning up cgroup!")
+	}()
 	cmd := exec.Command("/proc/self/exe", append([]string{"child"}, args...)...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
@@ -107,7 +112,10 @@ func run(args []string) {
 	cmd.SysProcAttr.UseCgroupFD = true
 	cmd.SysProcAttr.CgroupFD = int(cgroup_dir.Fd())
 
-	Try(cmd.Run, "Setting up KonTain failed!")
+	if err := cmd.Run(); err != nil {
+		fmt.Println("Setting up KonTain failed: ", err)
+		return // os.Exit prevents defer to run; we use return to allow the defer which removes cgroup run
+	}
 }
 
 func child(args []string) {
