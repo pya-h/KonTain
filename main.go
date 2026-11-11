@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"syscall"
 )
 
@@ -42,8 +43,49 @@ func TryWithSuccess(fn func() error, success_msg string, error_tag string) {
 	fmt.Println("Done!", success_msg)
 }
 
+func limitProcesses(cgroup_name string, limit uint64) error {
+	cgroup_path := filepath.Join("/sys/fs/cgroup", cgroup_name)
+	if err := os.MkdirAll(cgroup_path, 0755); err != nil {
+		return fmt.Errorf("Failed creating cgroup: %w", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(cgroup_path, "pids.max"), []byte(fmt.Sprint(limit)), 0644); err != nil {
+		return fmt.Errorf("Failed setting the PID limit: %w", err)
+	}
+	return nil
+}
+
+func limitMemoryUsage(cgroup_name string, limit_in_gb float64) error {
+	cgroup_path := filepath.Join("/sys/fs/cgroup", cgroup_name)
+	if err := os.MkdirAll(cgroup_path, 0755); err != nil {
+		return fmt.Errorf("Failed creating cgroup: %w", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(cgroup_path, "memory.max"), []byte(fmt.Sprint(uint(limit_in_gb*1024*1024*1024))), 0644); err != nil {
+		return fmt.Errorf("Failed setting memory limit: %w", err)
+	}
+	return nil
+}
+
 func run(args []string) {
 	fmt.Println("Parent PID: ", os.Getpid())
+
+	// setting control groups:
+	cgroup_name := "KonTain"
+	Try(func() error {
+		return limitProcesses(cgroup_name, 20)
+	}, "Failed setting process limit!")
+
+	Try(func() error {
+		return limitMemoryUsage(cgroup_name, 1.0)
+	}, "Failed setting memory limit!")
+	cgroup_dir, err := os.Open(filepath.Join("/sys/fs/cgroup", cgroup_name))
+	if err != nil {
+		fmt.Println("Seems cgroup setup has not gone as expected: ", err)
+		os.Exit(1)
+	}
+	defer cgroup_dir.Close()
+
 	cmd := exec.Command("/proc/self/exe", append([]string{"child"}, args...)...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
@@ -60,6 +102,11 @@ func run(args []string) {
 	// The reason where setting hostname needed a child process:
 	// Since the previous line doesnt actually run until cmd.Run() is executed, There is no new newuts created to set the hostname
 	// Also putting this line After Run wont work, because it wont reach to execute until the cmd.Run() is not exited (it some what pauses on it).
+
+	// Final steps at setting up control groups:
+	cmd.SysProcAttr.UseCgroupFD = true
+	cmd.SysProcAttr.CgroupFD = int(cgroup_dir.Fd())
+
 	Try(cmd.Run, "Setting up KonTain failed!")
 }
 
