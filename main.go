@@ -48,14 +48,13 @@ func run(args []string) {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	// cmd.SysProcAttr = &syscall.SysProcAttr{
-	// 	Cloneflags: syscall.CLONE_NEWUTS | syscall.CLONE_NEWPID |
-	// 		syscall.CLONE_NEWUSER, // not creating usernamespace here leads to needing root to create new_uts
-	// 	UidMappings: []syscall.SysProcIDMap{{ContainerID: 0, HostID: os.Getuid(), Size: 1}}, // now container sees current user as the root user inside it.
-	// 	GidMappings: []syscall.SysProcIDMap{{ContainerID: 0, HostID: os.Getgid(), Size: 1}},
-	// }
+
 	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Cloneflags: syscall.CLONE_NEWUTS | syscall.CLONE_NEWPID,
+		Cloneflags: syscall.CLONE_NEWUTS | syscall.CLONE_NEWPID |
+			syscall.CLONE_NEWNS | syscall.CLONE_NEWUSER, // Mount namespace; gets recursively shared with parent namespaces though
+		Unshareflags: syscall.CLONE_NEWNS,                                                    // means that I don't want to share the mount namespace with the Host/Parent namespace
+		UidMappings:  []syscall.SysProcIDMap{{ContainerID: 0, HostID: os.Getuid(), Size: 1}}, // now container sees current user as the root user inside it.
+		GidMappings:  []syscall.SysProcIDMap{{ContainerID: 0, HostID: os.Getgid(), Size: 1}},
 	}
 
 	// The reason where setting hostname needed a child process:
